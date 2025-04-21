@@ -39,10 +39,14 @@ class PartiesPersonnalisees(commands.Cog):
 
     def has_required_role():
         async def predicate(ctx):
-            # ID de Wicaebeth
-            wicaebeth_id = 257152912776495104
-            # Si c'est Wicaebeth, autoriser
-            if ctx.author.id == wicaebeth_id:
+            # Liste des IDs des utilisateurs autorisés
+            authorized_user_ids = [
+                257152912776495104,  # Wicaebeth
+                # Ajoutez ici les autres IDs d'utilisateurs autorisés
+            ]
+            
+            # Vérifier si l'utilisateur est dans la liste des autorisés
+            if ctx.author.id in authorized_user_ids:
                 return True
             
             # Liste des IDs des rôles autorisés
@@ -58,8 +62,7 @@ class PartiesPersonnalisees(commands.Cog):
                 1352739255817867345,
                 1352739281327751210,
                 1360970016614387903,
-                1361460353933770893
-                
+                1361460353933770893,
             ]
             
             # Vérifier si l'utilisateur a l'un des rôles autorisés
@@ -68,7 +71,7 @@ class PartiesPersonnalisees(commands.Cog):
                 if role and role in ctx.author.roles:
                     return True
                     
-            raise commands.CheckFailure("Tu n'as pas les rôles requis pour utiliser cette commande.")
+            raise commands.CheckFailure("Tu n'as pas les rôles requis ou n'es pas autorisé à utiliser cette commande.")
             return False
         return commands.check(predicate)
 
@@ -174,7 +177,7 @@ class PartiesPersonnalisees(commands.Cog):
     @partie_personnalisee.error
     async def partie_personnalisee_error(self, ctx, error):
         if isinstance(error, commands.CheckFailure):
-            error_msg = await ctx.send("❌ Tu n'as pas le rôle requis pour utiliser cette commande.")
+            error_msg = await ctx.send("❌ Tu n'es pas autorisé à utiliser cette commande.")
             await asyncio.sleep(5)
             try:
                 await error_msg.delete()
