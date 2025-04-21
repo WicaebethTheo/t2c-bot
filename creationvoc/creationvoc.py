@@ -166,6 +166,14 @@ class VocalControlView(discord.ui.View):
                 # Ajouter les permissions spéciales pour l'utilisateur whitelisté
                 await channel.set_permissions(user, connect=True)
                 
+                # Ajouter l'utilisateur à la whitelist
+                cog = self.bot.get_cog("CreationVoc")
+                if cog:
+                    if channel.id not in cog.whitelists:
+                        cog.whitelists[channel.id] = []
+                    if user.id not in cog.whitelists[channel.id]:
+                        cog.whitelists[channel.id].append(user.id)
+                
                 await interaction.followup.send(f"✅ {user.mention} a été ajouté à la whitelist. Il peut maintenant rejoindre le salon même s'il est privé.", ephemeral=True)
             except Exception as e:
                 await interaction.followup.send(f"❌ Une erreur s'est produite: {str(e)}", ephemeral=True)
@@ -219,6 +227,14 @@ class VocalControlView(discord.ui.View):
                 # Ajouter les permissions spéciales pour l'utilisateur blacklisté
                 await channel.set_permissions(user, connect=False)
                 
+                # Ajouter l'utilisateur à la blacklist
+                cog = self.bot.get_cog("CreationVoc")
+                if cog:
+                    if channel.id not in cog.blacklists:
+                        cog.blacklists[channel.id] = []
+                    if user.id not in cog.blacklists[channel.id]:
+                        cog.blacklists[channel.id].append(user.id)
+                
                 # Vérifier si l'utilisateur est déjà dans le salon et le déconnecter
                 if user.voice and user.voice.channel and user.voice.channel.id == channel.id:
                     await user.move_to(None)
@@ -230,6 +246,74 @@ class VocalControlView(discord.ui.View):
                 
         except asyncio.TimeoutError:
             await interaction.followup.send("❌ Temps écoulé. Aucun utilisateur n'a été ajouté à la blacklist.", ephemeral=True)
+            
+    @discord.ui.button(label="Voir Whitelist", style=discord.ButtonStyle.secondary, emoji="📋", custom_id="view_whitelist")
+    async def view_whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Vérifier si c'est bien le propriétaire du salon
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ Seul le créateur du salon peut voir les listes.", ephemeral=True)
+            return
+            
+        # Récupérer le salon
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message("❌ Ce salon n'existe plus.", ephemeral=True)
+            return
+            
+        # Récupérer la liste des utilisateurs whitelistés
+        cog = self.bot.get_cog("CreationVoc")
+        if not cog or channel.id not in cog.whitelists or not cog.whitelists[channel.id]:
+            await interaction.response.send_message("✅ La whitelist est vide. Aucun utilisateur n'a été ajouté.", ephemeral=True)
+            return
+            
+        # Créer un embed pour afficher la liste
+        embed = discord.Embed(
+            title="📋 Liste des utilisateurs whitelistés",
+            description="Ces utilisateurs peuvent rejoindre le salon même s'il est privé:",
+            color=discord.Color.green()
+        )
+        
+        # Ajouter chaque utilisateur à l'embed
+        for user_id in cog.whitelists[channel.id]:
+            user = interaction.guild.get_member(user_id)
+            if user:
+                embed.add_field(name=user.display_name, value=user.mention, inline=True)
+                
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+    @discord.ui.button(label="Voir Blacklist", style=discord.ButtonStyle.secondary, emoji="📋", custom_id="view_blacklist")
+    async def view_blacklist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Vérifier si c'est bien le propriétaire du salon
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ Seul le créateur du salon peut voir les listes.", ephemeral=True)
+            return
+            
+        # Récupérer le salon
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message("❌ Ce salon n'existe plus.", ephemeral=True)
+            return
+            
+        # Récupérer la liste des utilisateurs blacklistés
+        cog = self.bot.get_cog("CreationVoc")
+        if not cog or channel.id not in cog.blacklists or not cog.blacklists[channel.id]:
+            await interaction.response.send_message("✅ La blacklist est vide. Aucun utilisateur n'a été ajouté.", ephemeral=True)
+            return
+            
+        # Créer un embed pour afficher la liste
+        embed = discord.Embed(
+            title="📋 Liste des utilisateurs blacklistés",
+            description="Ces utilisateurs ne peuvent pas rejoindre le salon:",
+            color=discord.Color.red()
+        )
+        
+        # Ajouter chaque utilisateur à l'embed
+        for user_id in cog.blacklists[channel.id]:
+            user = interaction.guild.get_member(user_id)
+            if user:
+                embed.add_field(name=user.display_name, value=user.mention, inline=True)
+                
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class CreationVoc(commands.Cog):
     """Système de création automatique de salons vocaux"""
@@ -240,6 +324,8 @@ class CreationVoc(commands.Cog):
         self.CREATION_CHANNEL_ID = 1352995736803086366
         self.temp_channels = {}  # Pour stocker les salons temporaires
         self.control_messages = {}  # Pour stocker les messages de contrôle
+        self.whitelists = {}  # Pour stocker les utilisateurs whitelistés par salon
+        self.blacklists = {}  # Pour stocker les utilisateurs blacklistés par salon
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -287,6 +373,10 @@ class CreationVoc(commands.Cog):
                     # Stocker le salon dans notre dictionnaire
                     self.temp_channels[new_channel.id] = member.id
                     
+                    # Initialiser les listes de whitelist et blacklist pour ce salon
+                    self.whitelists[new_channel.id] = []
+                    self.blacklists[new_channel.id] = []
+                    
                     # Créer un salon textuel temporaire pour les contrôles, visible uniquement par le créateur du salon
                     try:
                         # Créer les permissions pour le salon textuel
@@ -328,7 +418,9 @@ class CreationVoc(commands.Cog):
                                 "• 🔓 **Rendre Public** - Tout le monde peut rejoindre\n"
                                 "• 👥 **Limite de Membres** - Définir un nombre maximum de participants\n"
                                 "• ✅ **Whitelist** - Ajouter un utilisateur qui pourra rejoindre même si le salon est privé\n"
-                                "• ❌ **Blacklist** - Empêcher un utilisateur de rejoindre et l'exclure s'il est déjà présent\n\n"
+                                "• ❌ **Blacklist** - Empêcher un utilisateur de rejoindre et l'exclure s'il est déjà présent\n"
+                                "• 📋 **Voir Whitelist** - Afficher la liste des utilisateurs whitelistés\n"
+                                "• 📋 **Voir Blacklist** - Afficher la liste des utilisateurs blacklistés\n\n"
                                 "Ce salon de contrôle est visible uniquement par vous et sera supprimé automatiquement quand le salon vocal sera fermé."
                             ),
                             color=discord.Color.blue()
@@ -406,6 +498,16 @@ class CreationVoc(commands.Cog):
                         del self.control_messages[before.channel.id]
                         print(f"Entrée supprimée du dictionnaire control_messages pour l'ID {before.channel.id}")
                     
+                    # Supprimer les entrées des dictionnaires
+                    if before.channel.id in self.temp_channels:
+                        del self.temp_channels[before.channel.id]
+                    if before.channel.id in self.control_messages:
+                        del self.control_messages[before.channel.id]
+                    if before.channel.id in self.whitelists:
+                        del self.whitelists[before.channel.id]
+                    if before.channel.id in self.blacklists:
+                        del self.blacklists[before.channel.id]
+                        
                 except discord.NotFound:
                     print(f"Canal déjà supprimé : {before.channel.id}")
                     # Si le canal a déjà été supprimé, on supprime quand même les entrées des dictionnaires
@@ -503,6 +605,10 @@ class CreationVoc(commands.Cog):
                         del self.temp_channels[channel_id]
                     if channel_id in self.control_messages:
                         del self.control_messages[channel_id]
+                    if channel_id in self.whitelists:
+                        del self.whitelists[channel_id]
+                    if channel_id in self.blacklists:
+                        del self.blacklists[channel_id]
                         
                 except Exception as e:
                     await ctx.send(f"⚠️ Erreur lors du nettoyage du salon {channel_id}: {str(e)}")
