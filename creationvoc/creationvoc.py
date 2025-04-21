@@ -119,6 +119,117 @@ class VocalControlView(discord.ui.View):
                 
         except asyncio.TimeoutError:
             await interaction.followup.send("❌ Temps écoulé. Aucune limite n'a été définie.", ephemeral=True)
+            
+    @discord.ui.button(label="Whitelist", style=discord.ButtonStyle.primary, emoji="✅", custom_id="whitelist")
+    async def whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Vérifier si c'est bien le propriétaire du salon
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ Seul le créateur du salon peut modifier ses paramètres.", ephemeral=True)
+            return
+            
+        # Récupérer le salon
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message("❌ Ce salon n'existe plus.", ephemeral=True)
+            return
+            
+        # Demander l'utilisateur à whitelister
+        await interaction.response.send_message(
+            "Mentionnez l'utilisateur à ajouter à la whitelist (il pourra rejoindre même si le salon est privé) :\n"
+            "Exemple : @utilisateur",
+            ephemeral=True
+        )
+        
+        # Fonction pour vérifier si c'est le bon utilisateur et le bon canal
+        def check(m):
+            return m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+            
+        try:
+            # Attendre la réponse
+            msg = await self.bot.wait_for('message', check=check, timeout=30.0)
+            
+            # Vérifier si un utilisateur a été mentionné
+            if not msg.mentions:
+                await interaction.followup.send("❌ Veuillez mentionner un utilisateur valide.", ephemeral=True)
+                return
+                
+            # Récupérer l'utilisateur mentionné
+            user = msg.mentions[0]
+            
+            # Supprimer le message de réponse de l'utilisateur
+            try:
+                await msg.delete()
+            except:
+                pass
+                
+            try:
+                # Ajouter les permissions spéciales pour l'utilisateur whitelisté
+                await channel.set_permissions(user, connect=True)
+                
+                await interaction.followup.send(f"✅ {user.mention} a été ajouté à la whitelist. Il peut maintenant rejoindre le salon même s'il est privé.", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Une erreur s'est produite: {str(e)}", ephemeral=True)
+                
+        except asyncio.TimeoutError:
+            await interaction.followup.send("❌ Temps écoulé. Aucun utilisateur n'a été ajouté à la whitelist.", ephemeral=True)
+            
+    @discord.ui.button(label="Blacklist", style=discord.ButtonStyle.danger, emoji="❌", custom_id="blacklist")
+    async def blacklist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Vérifier si c'est bien le propriétaire du salon
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ Seul le créateur du salon peut modifier ses paramètres.", ephemeral=True)
+            return
+            
+        # Récupérer le salon
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message("❌ Ce salon n'existe plus.", ephemeral=True)
+            return
+            
+        # Demander l'utilisateur à blacklister
+        await interaction.response.send_message(
+            "Mentionnez l'utilisateur à ajouter à la blacklist (il ne pourra pas rejoindre même si le salon est public) :\n"
+            "Exemple : @utilisateur",
+            ephemeral=True
+        )
+        
+        # Fonction pour vérifier si c'est le bon utilisateur et le bon canal
+        def check(m):
+            return m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+            
+        try:
+            # Attendre la réponse
+            msg = await self.bot.wait_for('message', check=check, timeout=30.0)
+            
+            # Vérifier si un utilisateur a été mentionné
+            if not msg.mentions:
+                await interaction.followup.send("❌ Veuillez mentionner un utilisateur valide.", ephemeral=True)
+                return
+                
+            # Récupérer l'utilisateur mentionné
+            user = msg.mentions[0]
+            
+            # Supprimer le message de réponse de l'utilisateur
+            try:
+                await msg.delete()
+            except:
+                pass
+                
+            try:
+                # Ajouter les permissions spéciales pour l'utilisateur blacklisté
+                await channel.set_permissions(user, connect=False)
+                
+                # Vérifier si l'utilisateur est déjà dans le salon et le déconnecter
+                if user.voice and user.voice.channel and user.voice.channel.id == channel.id:
+                    await user.move_to(None)
+                    await interaction.followup.send(f"✅ {user.mention} a été ajouté à la blacklist et déconnecté du salon.", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"✅ {user.mention} a été ajouté à la blacklist. Il ne pourra pas rejoindre le salon.", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Une erreur s'est produite: {str(e)}", ephemeral=True)
+                
+        except asyncio.TimeoutError:
+            await interaction.followup.send("❌ Temps écoulé. Aucun utilisateur n'a été ajouté à la blacklist.", ephemeral=True)
 
 class CreationVoc(commands.Cog):
     """Système de création automatique de salons vocaux"""
@@ -215,7 +326,9 @@ class CreationVoc(commands.Cog):
                                 "Utilisez les boutons ci-dessous pour personnaliser votre salon:\n"
                                 "• 🔒 **Rendre Privé** - Seules les personnes invitées peuvent rejoindre\n"
                                 "• 🔓 **Rendre Public** - Tout le monde peut rejoindre\n"
-                                "• 👥 **Limite de Membres** - Définir un nombre maximum de participants\n\n"
+                                "• 👥 **Limite de Membres** - Définir un nombre maximum de participants\n"
+                                "• ✅ **Whitelist** - Ajouter un utilisateur qui pourra rejoindre même si le salon est privé\n"
+                                "• ❌ **Blacklist** - Empêcher un utilisateur de rejoindre et l'exclure s'il est déjà présent\n\n"
                                 "Ce salon de contrôle est visible uniquement par vous et sera supprimé automatiquement quand le salon vocal sera fermé."
                             ),
                             color=discord.Color.blue()
@@ -337,6 +450,8 @@ class CreationVoc(commands.Cog):
                         f"En tant que créateur, vous pouvez :\n"
                         f"• Rendre le salon privé ou public\n"
                         f"• Limiter le nombre de membres\n"
+                        f"• Ajouter des utilisateurs à la whitelist (ils peuvent rejoindre même si le salon est privé)\n"
+                        f"• Ajouter des utilisateurs à la blacklist (ils ne peuvent pas rejoindre et sont exclus)\n"
                         f"• Gérer les autres membres (déplacer, rendre muet, etc.)\n\n"
                         f"Le salon sera automatiquement supprimé lorsqu'il sera vide."
                     ),
