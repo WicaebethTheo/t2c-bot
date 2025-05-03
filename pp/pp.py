@@ -51,13 +51,17 @@ class PartiesPersonnalisees(commands.Cog):
             
             # Liste des IDs des rôles autorisés (tous les rôles au-dessus de "helper")
             authorized_role_ids = [
-                974387257630933083,  # Administrateur
-                1352739267499003935,  # Développeur
-                1352739255817867345,  # Event
-                1352739281327751210,  # Ressources Humaines
-                1352739299036237917,  # Modérateur
-                1353003538380357652,  # Responsable
-                1352739356623896648,  # Helper
+                974387257630933083,     
+                1352739267499003935,  
+                1352739255817867345, 
+                1352739281327751210,  
+                1352739299036237917,  
+                1353003538380357652,  
+                1352739356623896648,  
+                1360970016614387903, 
+                1361460353933770893,
+                1352739366874779750,
+                1360963533755515077
             ]
             
             # Vérifier si l'utilisateur a l'un des rôles autorisés
