@@ -12,6 +12,7 @@ class Sanction(commands.Cog):
         self.config = Config.get_conf(self, identifier=1234567890)
         default_guild = {
             "warnings": {},  # {user_id: [{reason: str, date: str, count: int}]}
+            "current_warnings": {},  # {user_id: current_warning_level}
         }
         self.config.register_guild(**default_guild)
 
@@ -124,6 +125,32 @@ class Sanction(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    async def apply_warning_roles(self, member: discord.Member, warning_level: int):
+        """Applique les rôles d'avertissement appropriés"""
+        if warning_level == 0:
+            return
+            
+        # Retirer tous les rôles d'avertissement existants
+        for role_id in self.WARNING_ROLES.values():
+            role = member.guild.get_role(role_id)
+            if role and role in member.roles:
+                await member.remove_roles(role)
+        
+        # Appliquer le nouveau rôle d'avertissement
+        if warning_level in self.WARNING_ROLES:
+            warning_role = member.guild.get_role(self.WARNING_ROLES[warning_level])
+            if warning_role:
+                await member.add_roles(warning_role, reason=f"Réapplication du rôle d'avertissement {warning_level}")
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        """Vérifie et réapplique les rôles d'avertissement quand un membre rejoint"""
+        async with self.config.guild(member.guild).current_warnings() as current_warnings:
+            user_id = str(member.id)
+            if user_id in current_warnings:
+                warning_level = current_warnings[user_id]
+                await self.apply_warning_roles(member, warning_level)
+
     @sanction.command()
     @has_required_role()
     async def warn(self, ctx, member: discord.Member, *, reason: str):
@@ -157,48 +184,26 @@ class Sanction(commands.Cog):
                 warning_count = len(warnings[user_id])
                 await ctx.send(f"Application de la sanction {warning_count}...")
 
+                # Mettre à jour le niveau d'avertissement actuel
+                async with self.config.guild(ctx.guild).current_warnings() as current_warnings:
+                    current_warnings[user_id] = warning_count
+
                 if warning_count == 1:
                     # Premier avertissement : timeout 24h + rôle
                     await ctx.send("Application du timeout de 24h...")
                     await member.timeout(timedelta(days=1), reason=f"1er avertissement - {reason}")
-                    
-                    warning_role = ctx.guild.get_role(self.WARNING_ROLES[1])
-                    if warning_role:
-                        await ctx.send(f"Ajout du rôle {warning_role.name}...")
-                        await member.add_roles(warning_role, reason=f"1er avertissement - {reason}")
-                    else:
-                        await ctx.send(f"❌ Rôle d'avertissement 1 introuvable (ID: {self.WARNING_ROLES[1]})")
-                    
+                    await self.apply_warning_roles(member, 1)
                     message = f"⚠️ Premier avertissement - Timeout 24h pour {reason}"
 
                 elif warning_count == 2:
                     # Deuxième avertissement : timeout 1 semaine + rôle
                     await ctx.send("Application du timeout d'une semaine...")
                     await member.timeout(timedelta(days=7), reason=f"2ème avertissement - {reason}")
-                    
-                    # Retirer le rôle d'avertissement 1
-                    old_role = ctx.guild.get_role(self.WARNING_ROLES[1])
-                    if old_role and old_role in member.roles:
-                        await ctx.send(f"Retrait du rôle {old_role.name}...")
-                        await member.remove_roles(old_role)
-                    
-                    # Ajouter le rôle d'avertissement 2
-                    warning_role = ctx.guild.get_role(self.WARNING_ROLES[2])
-                    if warning_role:
-                        await ctx.send(f"Ajout du rôle {warning_role.name}...")
-                        await member.add_roles(warning_role, reason=f"2ème avertissement - {reason}")
-                    else:
-                        await ctx.send(f"❌ Rôle d'avertissement 2 introuvable (ID: {self.WARNING_ROLES[2]})")
-                    
+                    await self.apply_warning_roles(member, 2)
                     message = f"⚠️ Deuxième avertissement - Timeout 1 semaine pour {reason}"
 
                 elif warning_count >= 3:
                     # Troisième avertissement : ban définitif
-                    warning_role = ctx.guild.get_role(self.WARNING_ROLES[2])
-                    if warning_role and warning_role in member.roles:
-                        await ctx.send(f"Retrait du rôle {warning_role.name}...")
-                        await member.remove_roles(warning_role)
-                    
                     await ctx.send("Application du bannissement définitif...")
                     await member.ban(reason=f"3ème avertissement - Ban définitif - {reason}")
                     message = f"🚫 Troisième avertissement - Ban définitif pour {reason}"
@@ -252,12 +257,16 @@ class Sanction(commands.Cog):
             user_id = str(member.id)
             if user_id in warnings:
                 # Retirer les rôles d'avertissement
-                for role_id in self.WARNING_ROLES.values():
-                    role = ctx.guild.get_role(role_id)
-                    if role and role in member.roles:
-                        await member.remove_roles(role)
+                await self.apply_warning_roles(member, 0)
                 
+                # Effacer les avertissements
                 del warnings[user_id]
+                
+                # Effacer le niveau d'avertissement actuel
+                async with self.config.guild(ctx.guild).current_warnings() as current_warnings:
+                    if user_id in current_warnings:
+                        del current_warnings[user_id]
+                
                 await ctx.send(f"✅ Historique des sanctions effacé pour {member.mention}")
             else:
                 await ctx.send(f"Aucun historique trouvé pour {member.mention}")
