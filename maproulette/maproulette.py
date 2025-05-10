@@ -323,7 +323,7 @@ class MapRoulette(commands.Cog):
                 ),
                 color=0xE74C3C  # Rouge
             )
-            result_embed.set_image(url=map_choice['https://as1.ftcdn.net/jpg/00/08/37/08/1000_F_8370831_pjgOukKlNV27vADLsCCCqh4ij8esWqfB.jpg'])
+            result_embed.set_image(url=map_choice['image'])
             result_embed.set_footer(text=f"Roulette lancée par {author_name}", icon_url=author_avatar)
             if guild_icon:
                 result_embed.set_thumbnail(url=guild_icon)
@@ -331,6 +331,7 @@ class MapRoulette(commands.Cog):
             await vote_message.edit(embed=result_embed, view=None)
             await asyncio.sleep(3)  # Pause dramatique
             await vote_message.delete()
+            # Relancer la roulette avec le même contexte
             await self.roulette(ctx)  # Relancer la roulette
             
         else:
