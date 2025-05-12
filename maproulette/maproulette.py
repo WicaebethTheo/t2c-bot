@@ -87,6 +87,8 @@ class MapVoteView(discord.ui.View):
         if accept_count >= self.min_votes_required or reject_count >= self.min_votes_required:
             self.ended = True
             self.stop()
+            # Notifier le parent que le vote est terminé
+            await self.parent.handle_vote_end(accept_count, reject_count)
     
     async def on_timeout(self):
         self.ended = True
@@ -143,6 +145,8 @@ class MapRoulette(commands.Cog):
         self.loading_emojis = ["🔄", "⏳", "⌛"]
         self.min_votes_required = 6
         self.vote_timeout = 60.0  # secondes
+        self.current_map = None
+        self.last_context = None
 
     def has_required_role():
         async def predicate(ctx):
@@ -184,6 +188,9 @@ class MapRoulette(commands.Cog):
     @has_required_role()
     async def roulette(self, ctx):
         """Choisit aléatoirement une map avec système de vote en groupe"""
+        # Sauvegarder le contexte pour la relance
+        self.last_context = ctx
+        
         # Supprimer la commande de l'utilisateur
         try:
             await ctx.message.delete()
@@ -268,6 +275,7 @@ class MapRoulette(commands.Cog):
         
         # Choisir une map aléatoire pour le résultat final
         map_choice = random.choice(self.maps)
+        self.current_map = map_choice  # Sauvegarder la map actuelle
         
         # Supprimer le message d'animation (sans la fenêtre de compte à rebours)
         await loading_message.delete()
@@ -331,8 +339,18 @@ class MapRoulette(commands.Cog):
             await vote_message.edit(embed=result_embed, view=None)
             await asyncio.sleep(3)  # Pause dramatique
             await vote_message.delete()
-            # Relancer la roulette avec le même contexte
-            await self.roulette(ctx)  # Relancer la roulette
+            
+            # Créer une nouvelle instance de la commande roulette
+            try:
+                await self.roulette(ctx)
+            except Exception as e:
+                error_embed = discord.Embed(
+                    title="❌ Erreur",
+                    description="Une erreur s'est produite lors de la relance de la roulette.",
+                    color=0xFF0000
+                )
+                await ctx.send(embed=error_embed)
+                print(f"Erreur lors de la relance de la roulette: {e}")
             
         else:
             # Pas assez de votes, garder la map par défaut
@@ -362,6 +380,42 @@ class MapRoulette(commands.Cog):
                 await error_msg.delete()
             except (discord.Forbidden, discord.NotFound):
                 pass
+
+    async def handle_vote_end(self, accept_count: int, reject_count: int):
+        """Gère la fin du vote et détermine l'action à prendre"""
+        target_channel = self.bot.get_channel(self.roulette_channel_id)
+        if not target_channel:
+            return
+
+        if accept_count >= self.min_votes_required:
+            # La map est acceptée
+            result_embed = discord.Embed(
+                title="🎲 Roulette MAP",
+                description=(
+                    f"MAP → {self.current_map['name']}\n\n"
+                    f"**MAP ACCEPTÉE** avec {accept_count} votes pour et {reject_count} votes contre."
+                ),
+                color=0x2ECC71  # Vert
+            )
+            result_embed.set_image(url=self.current_map['image'])
+            await target_channel.send(embed=result_embed)
+            
+        elif reject_count >= self.min_votes_required:
+            # La map est refusée, relancer la roulette
+            result_embed = discord.Embed(
+                title="🎲 Roulette MAP",
+                description=(
+                    f"MAP → {self.current_map['name']}\n\n"
+                    f"**MAP REFUSÉE** avec {reject_count} votes contre et {accept_count} votes pour.\n\n"
+                    f"Relance de la roulette..."
+                ),
+                color=0xE74C3C  # Rouge
+            )
+            result_embed.set_image(url=self.current_map['image'])
+            await target_channel.send(embed=result_embed)
+            await asyncio.sleep(3)  # Pause dramatique
+            # Relancer la roulette
+            await self.roulette(self.last_context)
 
 async def setup(bot):
     await bot.add_cog(MapRoulette(bot))
